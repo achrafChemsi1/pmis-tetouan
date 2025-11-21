@@ -1,108 +1,97 @@
 /**
  * User Model
- * 
- * Database queries for user-related operations
+ * Database queries for user operations
  */
 
-const { query } = require('../config/database');
-const logger = require('../config/logger');
+const db = require('../config/database');
+const logger = require('../middleware/logger');
 
 /**
  * Find user by email
- * @param {string} email - User email
- * @returns {Promise<Object|null>} User object or null
+ * @param {String} email - User email
+ * @returns {Object|null} User object or null
  */
 const findByEmail = async (email) => {
   const sql = `
     SELECT 
-      u.id, u.email, u.username, u.password_hash,
-      u.first_name, u.last_name, u.phone, u.department,
-      u.is_active, u.login_attempts, u.locked_until,
-      u.preferred_language, u.last_login
-    FROM users u
-    WHERE u.email = ? AND u.deleted_at IS NULL
+      id, email, username, password_hash as passwordHash,
+      first_name as firstName, last_name as lastName,
+      phone, department, employee_id as employeeId,
+      is_active as isActive, last_login as lastLogin,
+      login_attempts as loginAttempts, locked_until as lockedUntil,
+      preferred_language as preferredLanguage,
+      created_at as createdAt, updated_at as updatedAt
+    FROM users
+    WHERE email = ? AND deleted_at IS NULL
     LIMIT 1
   `;
   
-  const results = await query(sql, [email]);
-  return results.length > 0 ? results[0] : null;
+  const rows = await db.query(sql, [email]);
+  return rows[0] || null;
 };
 
 /**
  * Find user by ID
- * @param {number} id - User ID
- * @returns {Promise<Object|null>} User object or null
+ * @param {Number} userId - User ID
+ * @returns {Object|null} User object or null
  */
-const findById = async (id) => {
+const findById = async (userId) => {
   const sql = `
     SELECT 
-      u.id, u.email, u.username,
-      u.first_name, u.last_name, u.phone, u.department,
-      u.employee_id, u.is_active, u.preferred_language,
-      u.last_login, u.created_at, u.updated_at
-    FROM users u
-    WHERE u.id = ? AND u.deleted_at IS NULL
+      id, email, username, password_hash as passwordHash,
+      first_name as firstName, last_name as lastName,
+      phone, department, employee_id as employeeId,
+      is_active as isActive, last_login as lastLogin,
+      login_attempts as loginAttempts, locked_until as lockedUntil,
+      preferred_language as preferredLanguage,
+      created_at as createdAt, updated_at as updatedAt
+    FROM users
+    WHERE id = ? AND deleted_at IS NULL
     LIMIT 1
   `;
   
-  const results = await query(sql, [id]);
-  return results.length > 0 ? results[0] : null;
+  const rows = await db.query(sql, [userId]);
+  return rows[0] || null;
 };
 
 /**
  * Get user roles
- * @param {number} userId - User ID
- * @returns {Promise<Array>} Array of role names
+ * @param {Number} userId - User ID
+ * @returns {Array<String>} Array of role names
  */
 const getUserRoles = async (userId) => {
   const sql = `
-    SELECT r.role_name
+    SELECT r.role_name as roleName
     FROM user_roles ur
     JOIN roles r ON ur.role_id = r.id
     WHERE ur.user_id = ?
   `;
   
-  const results = await query(sql, [userId]);
-  return results.map(row => row.role_name);
+  const rows = await db.query(sql, [userId]);
+  return rows.map(row => row.roleName);
 };
 
 /**
  * Get user permissions
- * @param {number} userId - User ID
- * @returns {Promise<Array>} Array of permission codes
+ * @param {Number} userId - User ID
+ * @returns {Array<String>} Array of permission codes
  */
 const getUserPermissions = async (userId) => {
   const sql = `
-    SELECT DISTINCT p.permission_code
+    SELECT DISTINCT p.permission_code as permissionCode
     FROM user_roles ur
     JOIN role_permissions rp ON ur.role_id = rp.role_id
     JOIN permissions p ON rp.permission_id = p.id
     WHERE ur.user_id = ?
   `;
   
-  const results = await query(sql, [userId]);
-  return results.map(row => row.permission_code);
-};
-
-/**
- * Update last login timestamp
- * @param {number} userId - User ID
- * @returns {Promise<void>}
- */
-const updateLastLogin = async (userId) => {
-  const sql = `
-    UPDATE users
-    SET last_login = NOW(), login_attempts = 0
-    WHERE id = ?
-  `;
-  
-  await query(sql, [userId]);
+  const rows = await db.query(sql, [userId]);
+  return rows.map(row => row.permissionCode);
 };
 
 /**
  * Increment failed login attempts
- * @param {number} userId - User ID
- * @returns {Promise<void>}
+ * @param {Number} userId - User ID
  */
 const incrementLoginAttempts = async (userId) => {
   const sql = `
@@ -111,32 +100,27 @@ const incrementLoginAttempts = async (userId) => {
     WHERE id = ?
   `;
   
-  await query(sql, [userId]);
+  await db.query(sql, [userId]);
 };
 
 /**
  * Lock user account
- * @param {number} userId - User ID
- * @param {number} durationMs - Lock duration in milliseconds
- * @returns {Promise<void>}
+ * @param {Number} userId - User ID
+ * @param {Date} lockedUntil - Lock expiration date
  */
-const lockAccount = async (userId, durationMs) => {
+const lockAccount = async (userId, lockedUntil) => {
   const sql = `
     UPDATE users
-    SET locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND)
+    SET locked_until = ?
     WHERE id = ?
   `;
   
-  const durationSeconds = Math.floor(durationMs / 1000);
-  await query(sql, [durationSeconds, userId]);
-  
-  logger.warn('User account locked due to failed login attempts', { userId });
+  await db.query(sql, [lockedUntil, userId]);
 };
 
 /**
  * Reset login attempts
- * @param {number} userId - User ID
- * @returns {Promise<void>}
+ * @param {Number} userId - User ID
  */
 const resetLoginAttempts = async (userId) => {
   const sql = `
@@ -145,72 +129,88 @@ const resetLoginAttempts = async (userId) => {
     WHERE id = ?
   `;
   
-  await query(sql, [userId]);
+  await db.query(sql, [userId]);
+};
+
+/**
+ * Update last login timestamp
+ * @param {Number} userId - User ID
+ */
+const updateLastLogin = async (userId) => {
+  const sql = `
+    UPDATE users
+    SET last_login = NOW()
+    WHERE id = ?
+  `;
+  
+  await db.query(sql, [userId]);
 };
 
 /**
  * Set password reset token
- * @param {number} userId - User ID
- * @param {string} token - Reset token
+ * @param {Number} userId - User ID
+ * @param {String} token - Hashed reset token
  * @param {Date} expiresAt - Token expiration
- * @returns {Promise<void>}
  */
 const setPasswordResetToken = async (userId, token, expiresAt) => {
   const sql = `
     UPDATE users
-    SET password_reset_token = ?, password_reset_expires = ?
+    SET password_reset_token = ?,
+        password_reset_expires = ?
     WHERE id = ?
   `;
   
-  await query(sql, [token, expiresAt, userId]);
+  await db.query(sql, [token, expiresAt, userId]);
 };
 
 /**
- * Find user by reset token
- * @param {string} token - Reset token
- * @returns {Promise<Object|null>} User object or null
+ * Find user by password reset token
+ * @param {String} token - Hashed reset token
+ * @returns {Object|null} User object or null
  */
-const findByResetToken = async (token) => {
+const findByPasswordResetToken = async (token) => {
   const sql = `
-    SELECT id, email, password_reset_expires
+    SELECT 
+      id, email, password_reset_expires as passwordResetExpires
     FROM users
     WHERE password_reset_token = ? 
-      AND password_reset_expires > NOW()
       AND deleted_at IS NULL
     LIMIT 1
   `;
   
-  const results = await query(sql, [token]);
-  return results.length > 0 ? results[0] : null;
+  const rows = await db.query(sql, [token]);
+  return rows[0] || null;
 };
 
 /**
  * Update user password
- * @param {number} userId - User ID
- * @param {string} passwordHash - New password hash
- * @returns {Promise<void>}
+ * @param {Number} userId - User ID
+ * @param {String} passwordHash - New password hash
  */
 const updatePassword = async (userId, passwordHash) => {
   const sql = `
     UPDATE users
     SET password_hash = ?,
-        password_reset_token = NULL,
-        password_reset_expires = NULL,
         updated_at = NOW()
     WHERE id = ?
   `;
   
-  await query(sql, [passwordHash, userId]);
+  await db.query(sql, [passwordHash, userId]);
 };
 
 /**
- * Check if user is admin
- * @param {number} userId - User ID
- * @returns {Promise<boolean>} True if user is admin
+ * Clear password reset token
+ * @param {Number} userId - User ID
  */
-const isAdmin = async (userId) => {
-  const roles = await getUserRoles(userId);
-  return roles.includes('ADMIN');
+const clearPasswordResetToken = async (userId) => {
+  const sql = `
+    UPDATE users
+    SET password_reset_token = NULL,
+        password_reset_expires = NULL
+    WHERE id = ?
+  `;
+  
+  await db.query(sql, [userId]);
 };
 
 module.exports = {
@@ -218,12 +218,12 @@ module.exports = {
   findById,
   getUserRoles,
   getUserPermissions,
-  updateLastLogin,
   incrementLoginAttempts,
   lockAccount,
   resetLoginAttempts,
+  updateLastLogin,
   setPasswordResetToken,
-  findByResetToken,
+  findByPasswordResetToken,
   updatePassword,
-  isAdmin,
+  clearPasswordResetToken
 };

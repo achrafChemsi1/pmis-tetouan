@@ -1,129 +1,123 @@
 /**
  * Authentication Controller
- * 
- * Handles authentication-related HTTP requests
+ * Handle authentication endpoints: login, logout, password reset, etc.
  */
 
 const authService = require('../services/authService');
-const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../middleware/logger');
 const { HTTP_STATUS } = require('../config/constants');
-const logger = require('../config/logger');
+const { asyncHandler } = require('../middleware/errorHandler');
 
 /**
- * @route POST /api/v1/auth/login
- * @desc Login user with email and password
- * @access Public
+ * @route   POST /api/v1/auth/login
+ * @desc    Authenticate user and return JWT tokens
+ * @access  Public
  */
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-
-  const result = await authService.login(email, password);
-
+  const ip = req.ip;
+  const userAgent = req.get('user-agent');
+  
+  logger.info('Login attempt:', { email, ip });
+  
+  const result = await authService.login(email, password, ip, userAgent);
+  
+  logger.info('Login successful:', { userId: result.user.id, email });
+  
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    data: result,
+    data: result
   });
 });
 
 /**
- * @route POST /api/v1/auth/logout
- * @desc Logout user and revoke refresh token
- * @access Private
+ * @route   POST /api/v1/auth/logout
+ * @desc    Invalidate refresh token and logout user
+ * @access  Private
  */
 const logout = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
   const { refreshToken } = req.body;
-
-  await authService.logout(refreshToken);
-
+  
+  await authService.logout(userId, refreshToken);
+  
+  logger.info('Logout successful:', { userId });
+  
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    message: 'Logged out successfully',
+    message: 'Logged out successfully'
   });
 });
 
 /**
- * @route POST /api/v1/auth/refresh
- * @desc Get new access token using refresh token
- * @access Public
+ * @route   POST /api/v1/auth/refresh
+ * @desc    Get new access token using refresh token
+ * @access  Public
  */
 const refresh = asyncHandler(async (req, res) => {
   const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    return res.status(HTTP_STATUS.BAD_REQUEST).json({
-      success: false,
-      error: {
-        code: 'INVALID_INPUT',
-        message: 'Refresh token is required',
-      },
-    });
-  }
-
-  const result = await authService.refreshAccessToken(refreshToken);
-
+  
+  const result = await authService.refreshToken(refreshToken);
+  
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    data: result,
+    data: result
   });
 });
 
 /**
- * @route POST /api/v1/auth/password-reset-request
- * @desc Request password reset email
- * @access Public
+ * @route   POST /api/v1/auth/password-reset-request
+ * @desc    Request password reset email
+ * @access  Public
  */
 const passwordResetRequest = asyncHandler(async (req, res) => {
   const { email } = req.body;
-
-  const resetToken = await authService.requestPasswordReset(email);
-
-  // TODO: Send email with reset token
-  // For now, just log it (in production, use email service)
-  if (resetToken) {
-    logger.info('Password reset token (send via email):', { 
-      email, 
-      resetToken,
-      resetUrl: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`,
-    });
-  }
-
-  // Always return success (don't reveal if email exists)
+  
+  await authService.requestPasswordReset(email);
+  
+  logger.info('Password reset requested:', { email });
+  
+  // Always return success to prevent email enumeration
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    message: 'If the email exists, a password reset link has been sent.',
+    message: 'If the email exists, a password reset link has been sent'
   });
 });
 
 /**
- * @route POST /api/v1/auth/password-reset
- * @desc Reset password using reset token
- * @access Public
+ * @route   POST /api/v1/auth/password-reset
+ * @desc    Reset password with token
+ * @access  Public
  */
 const passwordReset = asyncHandler(async (req, res) => {
   const { token, newPassword } = req.body;
-
+  
   await authService.resetPassword(token, newPassword);
-
+  
+  logger.info('Password reset successful');
+  
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    message: 'Password reset successfully. You can now login with your new password.',
+    message: 'Password reset successfully'
   });
 });
 
 /**
- * @route POST /api/v1/auth/change-password
- * @desc Change password for authenticated user
- * @access Private
+ * @route   POST /api/v1/auth/change-password
+ * @desc    Change password (authenticated users)
+ * @access  Private
  */
 const changePassword = asyncHandler(async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
   const userId = req.user.id;
-
+  const { currentPassword, newPassword } = req.body;
+  
   await authService.changePassword(userId, currentPassword, newPassword);
-
+  
+  logger.info('Password changed successfully:', { userId });
+  
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    message: 'Password changed successfully',
+    message: 'Password changed successfully'
   });
 });
 
@@ -133,5 +127,5 @@ module.exports = {
   refresh,
   passwordResetRequest,
   passwordReset,
-  changePassword,
+  changePassword
 };
