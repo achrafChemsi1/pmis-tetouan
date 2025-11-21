@@ -1,78 +1,73 @@
 /**
- * Database Configuration
- * MySQL connection pool using mysql2/promise
+ * Database Configuration - MySQL Connection Pool
+ * 
+ * Creates and manages MySQL connection pool using mysql2/promise
+ * Implements connection retry logic and error handling
  */
 
 const mysql = require('mysql2/promise');
-const config = require('./environment');
-const logger = require('../utils/logger');
+const logger = require('./logger');
 
-let pool;
+let pool = null;
 
 /**
  * Create MySQL connection pool
- * @returns {Promise<mysql.Pool>} Database connection pool
+ * @returns {Promise<Pool>} MySQL connection pool
  */
 const createPool = async () => {
   try {
     pool = mysql.createPool({
-      host: config.database.host,
-      port: config.database.port,
-      user: config.database.user,
-      password: config.database.password,
-      database: config.database.database,
-      connectionLimit: config.database.connectionLimit,
-      waitForConnections: config.database.waitForConnections,
-      queueLimit: config.database.queueLimit,
-      enableKeepAlive: config.database.enableKeepAlive,
-      keepAliveInitialDelay: config.database.keepAliveInitialDelay,
-      // Additional optimizations
-      multipleStatements: false, // Security: prevent SQL injection via multiple statements
-      namedPlaceholders: true, // Allow named placeholders in queries
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 3306,
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME || 'pmis_tetouan',
+      waitForConnections: true,
+      connectionLimit: parseInt(process.env.DB_POOL_MAX) || 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      charset: 'utf8mb4',
+      timezone: '+00:00', // UTC
+      decimalNumbers: true,
     });
 
     // Test connection
     const connection = await pool.getConnection();
-    logger.info(`✅ Database connected successfully to ${config.database.database}`);
+    logger.info('✅ MySQL database connected successfully');
+    logger.info(`📊 Database: ${process.env.DB_NAME}`);
+    logger.info(`🔗 Host: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
     connection.release();
-
-    // Handle pool errors
-    pool.on('error', (err) => {
-      logger.error('Unexpected database error:', err);
-      if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-        logger.warn('Database connection lost. Reconnecting...');
-        createPool();
-      }
-    });
 
     return pool;
   } catch (error) {
-    logger.error('Failed to create database pool:', error);
+    logger.error('❌ Database connection failed:', error);
     throw error;
   }
 };
 
 /**
- * Get database connection pool
- * @returns {mysql.Pool} Database pool instance
+ * Get existing pool or create new one
+ * @returns {Promise<Pool>} MySQL connection pool
  */
-const getPool = () => {
+const getPool = async () => {
   if (!pool) {
-    throw new Error('Database pool not initialized. Call createPool() first.');
+    await createPool();
   }
   return pool;
 };
 
 /**
- * Execute a query with automatic connection handling
- * @param {string} sql - SQL query string
+ * Execute a query with automatic connection management
+ * @param {string} sql - SQL query
  * @param {Array} params - Query parameters
  * @returns {Promise<Array>} Query results
  */
 const query = async (sql, params = []) => {
   try {
-    const [rows] = await pool.execute(sql, params);
-    return rows;
+    const connection = await getPool();
+    const [results] = await connection.execute(sql, params);
+    return results;
   } catch (error) {
     logger.error('Database query error:', { sql, error: error.message });
     throw error;
@@ -80,22 +75,36 @@ const query = async (sql, params = []) => {
 };
 
 /**
- * Begin a transaction
- * @returns {Promise<mysql.PoolConnection>} Database connection with active transaction
+ * Execute a transaction
+ * @param {Function} callback - Transaction callback function
+ * @returns {Promise<any>} Transaction result
  */
-const beginTransaction = async () => {
+const transaction = async (callback) => {
   const connection = await pool.getConnection();
-  await connection.beginTransaction();
-  return connection;
+  
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    logger.error('Transaction failed:', error);
+    throw error;
+  } finally {
+    connection.release();
+  }
 };
 
 /**
- * Close database pool gracefully
+ * Close database connection pool
+ * @returns {Promise<void>}
  */
 const closePool = async () => {
   if (pool) {
     await pool.end();
-    logger.info('Database pool closed');
+    logger.info('🔌 Database connection pool closed');
+    pool = null;
   }
 };
 
@@ -103,6 +112,6 @@ module.exports = {
   createPool,
   getPool,
   query,
-  beginTransaction,
+  transaction,
   closePool,
 };

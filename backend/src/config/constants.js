@@ -1,41 +1,10 @@
 /**
  * Application Constants
- * Central location for all application-wide constants
+ * 
+ * Centralized constants for the PMIS application
  */
 
 module.exports = {
-  // HTTP Status Codes
-  HTTP_STATUS: {
-    OK: 200,
-    CREATED: 201,
-    NO_CONTENT: 204,
-    BAD_REQUEST: 400,
-    UNAUTHORIZED: 401,
-    FORBIDDEN: 403,
-    NOT_FOUND: 404,
-    CONFLICT: 409,
-    UNPROCESSABLE_ENTITY: 422,
-    TOO_MANY_REQUESTS: 429,
-    INTERNAL_SERVER_ERROR: 500,
-    SERVICE_UNAVAILABLE: 503,
-  },
-
-  // Error Codes
-  ERROR_CODES: {
-    VALIDATION_ERROR: 'VALIDATION_ERROR',
-    INVALID_INPUT: 'INVALID_INPUT',
-    UNAUTHORIZED: 'UNAUTHORIZED',
-    FORBIDDEN: 'FORBIDDEN',
-    NOT_FOUND: 'NOT_FOUND',
-    CONFLICT: 'CONFLICT',
-    INTERNAL_ERROR: 'INTERNAL_ERROR',
-    DATABASE_ERROR: 'DATABASE_ERROR',
-    RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
-    INVALID_TOKEN: 'INVALID_TOKEN',
-    TOKEN_EXPIRED: 'TOKEN_EXPIRED',
-    INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
-  },
-
   // User Roles
   ROLES: {
     ADMIN: 'ADMIN',
@@ -55,12 +24,37 @@ module.exports = {
     CANCELLED: 'CANCELLED',
   },
 
+  // Project Types
+  PROJECT_TYPES: {
+    CONSTRUCTION: 'CONSTRUCTION',
+    RENOVATION: 'RENOVATION',
+    INFRASTRUCTURE: 'INFRASTRUCTURE',
+    EQUIPMENT: 'EQUIPMENT',
+    OTHER: 'OTHER',
+  },
+
   // Project Priority
   PROJECT_PRIORITY: {
     LOW: 'LOW',
     MEDIUM: 'MEDIUM',
     HIGH: 'HIGH',
     CRITICAL: 'CRITICAL',
+  },
+
+  // Budget Status
+  BUDGET_STATUS: {
+    ON_TRACK: 'ON_TRACK',
+    AT_RISK: 'AT_RISK',
+    EXCEEDED: 'EXCEEDED',
+  },
+
+  // Budget Categories
+  BUDGET_CATEGORIES: {
+    PERSONNEL: 'PERSONNEL',
+    EQUIPMENT: 'EQUIPMENT',
+    MATERIALS: 'MATERIALS',
+    CONTRACTORS: 'CONTRACTORS',
+    OTHER: 'OTHER',
   },
 
   // Equipment Status
@@ -72,11 +66,14 @@ module.exports = {
     DAMAGED: 'DAMAGED',
   },
 
-  // Budget Status
-  BUDGET_STATUS: {
-    ON_TRACK: 'ON_TRACK',
-    AT_RISK: 'AT_RISK',
-    EXCEEDED: 'EXCEEDED',
+  // Equipment Types
+  EQUIPMENT_TYPES: {
+    VEHICLE: 'VEHICLE',
+    MACHINERY: 'MACHINERY',
+    TOOLS: 'TOOLS',
+    ELECTRONICS: 'ELECTRONICS',
+    FURNITURE: 'FURNITURE',
+    OTHER: 'OTHER',
   },
 
   // Approval Status
@@ -87,19 +84,13 @@ module.exports = {
     DELEGATED: 'DELEGATED',
   },
 
-  // Password Requirements
-  PASSWORD: {
-    MIN_LENGTH: 8,
-    MAX_LENGTH: 128,
-    SALT_ROUNDS: 10,
-    REGEX: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
-  },
-
-  // Token Types
-  TOKEN_TYPES: {
-    ACCESS: 'access',
-    REFRESH: 'refresh',
-    RESET: 'reset',
+  // Milestone Status
+  MILESTONE_STATUS: {
+    NOT_STARTED: 'NOT_STARTED',
+    IN_PROGRESS: 'IN_PROGRESS',
+    COMPLETED: 'COMPLETED',
+    DELAYED: 'DELAYED',
+    CANCELLED: 'CANCELLED',
   },
 
   // Pagination
@@ -109,16 +100,38 @@ module.exports = {
     MAX_LIMIT: 100,
   },
 
-  // Cache TTL (in seconds)
-  CACHE_TTL: {
-    SHORT: 60, // 1 minute
-    MEDIUM: 300, // 5 minutes
-    LONG: 3600, // 1 hour
+  // HTTP Status Codes
+  HTTP_STATUS: {
+    OK: 200,
+    CREATED: 201,
+    NO_CONTENT: 204,
+    BAD_REQUEST: 400,
+    UNAUTHORIZED: 401,
+    FORBIDDEN: 403,
+    NOT_FOUND: 404,
+    UNPROCESSABLE_ENTITY: 422,
+    TOO_MANY_REQUESTS: 429,
+    INTERNAL_SERVER_ERROR: 500,
   },
 
-  // File Upload
-  FILE_UPLOAD: {
-    ALLOWED_TYPES: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png'],
-    MAX_SIZE: 10485760, // 10MB
+  // Error Codes
+  ERROR_CODES: {
+    INVALID_INPUT: 'INVALID_INPUT',
+    UNAUTHORIZED: 'UNAUTHORIZED',
+    FORBIDDEN: 'FORBIDDEN',
+    NOT_FOUND: 'NOT_FOUND',
+    VALIDATION_ERROR: 'VALIDATION_ERROR',
+    RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+    INTERNAL_ERROR: 'INTERNAL_ERROR',
+    DATABASE_ERROR: 'DATABASE_ERROR',
+    DUPLICATE_ENTRY: 'DUPLICATE_ENTRY',
+  },
+
+  // Cache TTL (in seconds)
+  CACHE_TTL: {
+    PROJECTS_LIST: 300, // 5 minutes
+    PROJECT_DETAIL: 60, // 1 minute
+    EQUIPMENT_LIST: 600, // 10 minutes
+    USER_PERMISSIONS: 3600, // 1 hour
   },
 };
