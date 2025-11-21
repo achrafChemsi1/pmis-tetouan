@@ -1,34 +1,33 @@
 /**
- * Rate Limiter Middleware
- * 
- * Prevents API abuse with configurable rate limits
+ * Rate Limiting Middleware
+ * Prevent API abuse with configurable rate limits
  */
 
 const rateLimit = require('express-rate-limit');
-const environment = require('../config/environment');
-const { HTTP_STATUS, ERROR_CODES } = require('../config/constants');
-const logger = require('../config/logger');
+const logger = require('./logger');
+const { RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_AUTH_MAX_REQUESTS, HTTP_STATUS, ERROR_CODES } = require('../config/constants');
 
 /**
  * General API rate limiter
+ * 100 requests per minute per IP
  */
-const apiLimiter = rateLimit({
-  windowMs: environment.rateLimit.windowMs, // 1 minute
-  max: environment.rateLimit.maxRequests, // 100 requests per window
+const generalLimiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX_REQUESTS,
   message: {
     success: false,
     error: {
       code: ERROR_CODES.RATE_LIMIT_EXCEEDED,
-      message: 'Too many requests. Please try again later.',
-    },
+      message: 'Too many requests. Please try again later.'
+    }
   },
-  standardHeaders: true, // Return rate limit info in headers
+  standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
-    logger.warn('Rate limit exceeded', {
+    logger.warn('Rate limit exceeded:', {
       ip: req.ip,
       path: req.path,
-      userId: req.user?.id,
+      userAgent: req.get('user-agent')
     });
     
     res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
@@ -36,44 +35,71 @@ const apiLimiter = rateLimit({
       error: {
         code: ERROR_CODES.RATE_LIMIT_EXCEEDED,
         message: 'Too many requests. Please try again later.',
-        retryAfter: Math.ceil(environment.rateLimit.windowMs / 1000),
-      },
+        retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)
+      }
     });
   },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  }
 });
 
 /**
- * Strict rate limiter for authentication endpoints
+ * Authentication endpoint rate limiter
+ * 5 requests per minute per IP (stricter)
  */
 const authLimiter = rateLimit({
-  windowMs: environment.rateLimit.windowMs, // 1 minute
-  max: environment.rateLimit.authMax, // 5 requests per window
-  skipSuccessfulRequests: false,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_AUTH_MAX_REQUESTS,
   message: {
     success: false,
     error: {
       code: ERROR_CODES.RATE_LIMIT_EXCEEDED,
-      message: 'Too many authentication attempts. Please try again later.',
-    },
+      message: 'Too many authentication attempts. Please try again later.'
+    }
   },
+  standardHeaders: true,
+  legacyHeaders: false,
   handler: (req, res) => {
-    logger.warn('Auth rate limit exceeded', {
+    logger.warn('Auth rate limit exceeded:', {
       ip: req.ip,
       path: req.path,
+      body: { email: req.body?.email },
+      userAgent: req.get('user-agent')
     });
     
     res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
       success: false,
       error: {
         code: ERROR_CODES.RATE_LIMIT_EXCEEDED,
-        message: 'Too many authentication attempts. Please try again in 1 minute.',
-        retryAfter: 60,
-      },
+        message: 'Too many authentication attempts. Please try again later.',
+        retryAfter: Math.ceil(RATE_LIMIT_WINDOW_MS / 1000)
+      }
     });
+  }
+});
+
+/**
+ * Export rate limiter
+ * 10 requests per hour for export endpoints
+ */
+const exportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: {
+    success: false,
+    error: {
+      code: ERROR_CODES.RATE_LIMIT_EXCEEDED,
+      message: 'Too many export requests. Please try again later.'
+    }
   },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 module.exports = {
-  apiLimiter,
+  generalLimiter,
   authLimiter,
+  exportLimiter
 };

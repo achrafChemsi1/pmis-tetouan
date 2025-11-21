@@ -1,66 +1,74 @@
 /**
- * Authentication Middleware
- * 
- * Verifies JWT tokens and attaches user information to request
+ * JWT Authentication Middleware
+ * Verify JWT tokens and attach user info to request
  */
 
 const jwt = require('jsonwebtoken');
-const environment = require('../config/environment');
+const logger = require('./logger');
+const { JWT_SECRET } = require('../config/environment');
 const { HTTP_STATUS, ERROR_CODES } = require('../config/constants');
-const logger = require('../config/logger');
 
 /**
- * Verify JWT token and attach user to request
- * @param {Request} req - Express request
- * @param {Response} res - Express response
+ * Authenticate JWT token from Authorization header
+ * @param {Object} req - Express request
+ * @param {Object} res - Express response
  * @param {Function} next - Express next function
  */
-const authenticateToken = (req, res, next) => {
+const authenticate = (req, res, next) => {
   try {
     // Extract token from Authorization header
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-    if (!token) {
-      logger.warn('Authentication failed: No token provided', {
-        ip: req.ip,
-        path: req.path,
-      });
-      
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         error: {
           code: ERROR_CODES.UNAUTHORIZED,
-          message: 'Authentication required. Please provide a valid token.',
-        },
+          message: 'No token provided. Authorization header required.'
+        }
       });
     }
-
+    
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
     // Verify token
-    jwt.verify(token, environment.jwt.secret, (err, decoded) => {
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
       if (err) {
-        logger.warn('Authentication failed: Invalid token', {
+        logger.warn('Token verification failed:', {
           error: err.message,
           ip: req.ip,
-          path: req.path,
+          userAgent: req.get('user-agent')
         });
         
-        let message = 'Invalid or expired token';
         if (err.name === 'TokenExpiredError') {
-          message = 'Token has expired. Please refresh your token.';
-        } else if (err.name === 'JsonWebTokenError') {
-          message = 'Invalid token. Please login again.';
+          return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+            success: false,
+            error: {
+              code: ERROR_CODES.UNAUTHORIZED,
+              message: 'Token expired. Please refresh your token.'
+            }
+          });
+        }
+        
+        if (err.name === 'JsonWebTokenError') {
+          return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+            success: false,
+            error: {
+              code: ERROR_CODES.UNAUTHORIZED,
+              message: 'Invalid token. Authentication failed.'
+            }
+          });
         }
         
         return res.status(HTTP_STATUS.UNAUTHORIZED).json({
           success: false,
           error: {
             code: ERROR_CODES.UNAUTHORIZED,
-            message,
-          },
+            message: 'Token verification failed.'
+          }
         });
       }
-
+      
       // Attach user info to request
       req.user = {
         id: decoded.sub,
@@ -68,9 +76,9 @@ const authenticateToken = (req, res, next) => {
         firstName: decoded.firstName,
         lastName: decoded.lastName,
         roles: decoded.roles || [],
-        permissions: decoded.permissions || [],
+        permissions: decoded.permissions || []
       };
-
+      
       next();
     });
   } catch (error) {
@@ -79,31 +87,37 @@ const authenticateToken = (req, res, next) => {
       success: false,
       error: {
         code: ERROR_CODES.INTERNAL_ERROR,
-        message: 'Internal server error during authentication',
-      },
+        message: 'Authentication error occurred'
+      }
     });
   }
 };
 
 /**
- * Optional authentication - doesn't fail if no token
- * Useful for endpoints that work for both authenticated and anonymous users
+ * Optional authentication (doesn't fail if no token)
+ * Used for endpoints that can work with or without authentication
  */
 const optionalAuth = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.user = null;
     return next();
   }
-
-  jwt.verify(token, environment.jwt.secret, (err, decoded) => {
-    if (!err) {
+  
+  const token = authHeader.substring(7);
+  
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      req.user = null;
+    } else {
       req.user = {
         id: decoded.sub,
         email: decoded.email,
+        firstName: decoded.firstName,
+        lastName: decoded.lastName,
         roles: decoded.roles || [],
-        permissions: decoded.permissions || [],
+        permissions: decoded.permissions || []
       };
     }
     next();
@@ -111,6 +125,6 @@ const optionalAuth = (req, res, next) => {
 };
 
 module.exports = {
-  authenticateToken,
-  optionalAuth,
+  authenticate,
+  optionalAuth
 };
