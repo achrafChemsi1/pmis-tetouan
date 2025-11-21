@@ -1,95 +1,57 @@
 /**
  * Role-Based Authorization Middleware
- * Checks if user has required roles or permissions
+ * 
+ * Checks if authenticated user has required roles or permissions
  */
 
-const { createError } = require('./errorHandler');
 const { HTTP_STATUS, ERROR_CODES, ROLES } = require('../config/constants');
-const logger = require('../utils/logger');
+const logger = require('../config/logger');
 
 /**
- * Check if user has any of the required roles
- * @param {Array<string>} allowedRoles - Array of allowed role names
- * @returns {Function} Express middleware function
+ * Check if user has one of the required roles
+ * @param {Array<string>} allowedRoles - Array of allowed roles
+ * @returns {Function} Express middleware
  */
-const requireRole = (allowedRoles) => {
+const requireRole = (allowedRoles = []) => {
   return (req, res, next) => {
-    // Ensure user is authenticated
     if (!req.user) {
-      logger.warn('Authorization attempted without authentication');
-      return next(
-        createError(
-          'Authentication required',
-          HTTP_STATUS.UNAUTHORIZED,
-          ERROR_CODES.UNAUTHORIZED
-        )
-      );
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.UNAUTHORIZED,
+          message: 'Authentication required',
+        },
+      });
+    }
+
+    // Admin has access to everything
+    if (req.user.roles.includes(ROLES.ADMIN)) {
+      return next();
     }
 
     // Check if user has any of the allowed roles
-    const userRoles = req.user.roles || [];
-    const hasRole = allowedRoles.some((role) => userRoles.includes(role));
+    const hasRole = allowedRoles.some(role => req.user.roles.includes(role));
 
     if (!hasRole) {
-      logger.warn('Authorization failed:', {
+      logger.warn('Authorization failed: Insufficient role', {
         userId: req.user.id,
-        userRoles,
+        userRoles: req.user.roles,
         requiredRoles: allowedRoles,
-        endpoint: req.originalUrl,
+        path: req.path,
+        method: req.method,
       });
-
-      return next(
-        createError(
-          'You do not have permission to access this resource',
-          HTTP_STATUS.FORBIDDEN,
-          ERROR_CODES.FORBIDDEN
-        )
-      );
-    }
-
-    logger.debug('Authorization successful:', {
-      userId: req.user.id,
-      role: userRoles.find((role) => allowedRoles.includes(role)),
-    });
-
-    next();
-  };
-};
-
-/**
- * Check if user has all of the required roles
- * @param {Array<string>} requiredRoles - Array of required role names
- * @returns {Function} Express middleware function
- */
-const requireAllRoles = (requiredRoles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return next(
-        createError(
-          'Authentication required',
-          HTTP_STATUS.UNAUTHORIZED,
-          ERROR_CODES.UNAUTHORIZED
-        )
-      );
-    }
-
-    const userRoles = req.user.roles || [];
-    const hasAllRoles = requiredRoles.every((role) => userRoles.includes(role));
-
-    if (!hasAllRoles) {
-      logger.warn('Authorization failed - missing required roles:', {
-        userId: req.user.id,
-        userRoles,
-        requiredRoles,
+      
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'You do not have permission to perform this action',
+          details: {
+            requiredRoles: allowedRoles,
+            yourRoles: req.user.roles,
+          },
+        },
       });
-
-      return next(
-        createError(
-          'Insufficient permissions',
-          HTTP_STATUS.FORBIDDEN,
-          ERROR_CODES.FORBIDDEN
-        )
-      );
     }
 
     next();
@@ -98,37 +60,46 @@ const requireAllRoles = (requiredRoles) => {
 
 /**
  * Check if user has specific permission
- * @param {string} permission - Required permission code
- * @returns {Function} Express middleware function
+ * @param {string} requiredPermission - Required permission code
+ * @returns {Function} Express middleware
  */
-const requirePermission = (permission) => {
+const requirePermission = (requiredPermission) => {
   return (req, res, next) => {
     if (!req.user) {
-      return next(
-        createError(
-          'Authentication required',
-          HTTP_STATUS.UNAUTHORIZED,
-          ERROR_CODES.UNAUTHORIZED
-        )
-      );
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.UNAUTHORIZED,
+          message: 'Authentication required',
+        },
+      });
     }
 
-    const userPermissions = req.user.permissions || [];
+    // Admin has all permissions
+    if (req.user.roles.includes(ROLES.ADMIN)) {
+      return next();
+    }
 
-    if (!userPermissions.includes(permission)) {
-      logger.warn('Authorization failed - missing permission:', {
+    // Check if user has the required permission
+    if (!req.user.permissions.includes(requiredPermission)) {
+      logger.warn('Authorization failed: Insufficient permission', {
         userId: req.user.id,
-        requiredPermission: permission,
-        userPermissions,
+        requiredPermission,
+        userPermissions: req.user.permissions,
+        path: req.path,
+        method: req.method,
       });
-
-      return next(
-        createError(
-          'You do not have permission to perform this action',
-          HTTP_STATUS.FORBIDDEN,
-          ERROR_CODES.FORBIDDEN
-        )
-      );
+      
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'You do not have permission to perform this action',
+          details: {
+            requiredPermission,
+          },
+        },
+      });
     }
 
     next();
@@ -136,35 +107,55 @@ const requirePermission = (permission) => {
 };
 
 /**
- * Check if user is admin
- * @returns {Function} Express middleware function
+ * Check if user has any of the required permissions
+ * @param {Array<string>} permissions - Array of permission codes
+ * @returns {Function} Express middleware
  */
-const requireAdmin = () => requireRole([ROLES.ADMIN]);
+const requireAnyPermission = (permissions = []) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.UNAUTHORIZED,
+          message: 'Authentication required',
+        },
+      });
+    }
 
-/**
- * Check if user can manage projects (Admin or Project Manager)
- * @returns {Function} Express middleware function
- */
-const canManageProjects = () => requireRole([ROLES.ADMIN, ROLES.PROJECT_MANAGER]);
+    // Admin has all permissions
+    if (req.user.roles.includes(ROLES.ADMIN)) {
+      return next();
+    }
 
-/**
- * Check if user can manage equipment (Admin or Equipment Officer)
- * @returns {Function} Express middleware function
- */
-const canManageEquipment = () => requireRole([ROLES.ADMIN, ROLES.EQUIPMENT_OFFICER]);
+    // Check if user has any of the required permissions
+    const hasPermission = permissions.some(permission => 
+      req.user.permissions.includes(permission)
+    );
 
-/**
- * Check if user can approve budgets (Admin or Finance Controller)
- * @returns {Function} Express middleware function
- */
-const canApproveBudgets = () => requireRole([ROLES.ADMIN, ROLES.FINANCE_CONTROLLER]);
+    if (!hasPermission) {
+      logger.warn('Authorization failed: None of required permissions', {
+        userId: req.user.id,
+        requiredPermissions: permissions,
+        userPermissions: req.user.permissions,
+        path: req.path,
+      });
+      
+      return res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'You do not have permission to perform this action',
+        },
+      });
+    }
+
+    next();
+  };
+};
 
 module.exports = {
   requireRole,
-  requireAllRoles,
   requirePermission,
-  requireAdmin,
-  canManageProjects,
-  canManageEquipment,
-  canApproveBudgets,
+  requireAnyPermission,
 };

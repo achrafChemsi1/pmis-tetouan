@@ -1,77 +1,96 @@
 /**
  * Global Error Handler Middleware
- * Catches and formats all errors consistently
+ * 
+ * Catches all errors and formats consistent error responses
+ * Prevents sensitive information leakage
  */
 
-const logger = require('../utils/logger');
 const { HTTP_STATUS, ERROR_CODES } = require('../config/constants');
-const config = require('../config/environment');
+const logger = require('../config/logger');
+const environment = require('../config/environment');
 
 /**
  * Global error handling middleware
  * @param {Error} err - Error object
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- * @param {Function} next - Express next middleware function
+ * @param {Request} req - Express request
+ * @param {Response} res - Express response
+ * @param {Function} next - Express next function
  */
 const errorHandler = (err, req, res, next) => {
-  // Log error
-  logger.error('Error caught by global handler:', {
-    message: err.message,
+  // Log error details
+  logger.error('Error occurred:', {
+    error: err.message,
     stack: err.stack,
-    url: req.originalUrl,
+    path: req.path,
     method: req.method,
-    ip: req.ip,
     userId: req.user?.id,
+    ip: req.ip,
   });
 
   // Default error response
   let statusCode = err.statusCode || HTTP_STATUS.INTERNAL_SERVER_ERROR;
   let errorCode = err.code || ERROR_CODES.INTERNAL_ERROR;
-  let message = err.message || 'An unexpected error occurred';
+  let message = err.message || 'Internal server error';
   let details = err.details || [];
 
   // Handle specific error types
-  if (err.name === 'ValidationError') {
+  
+  // MySQL errors
+  if (err.code && err.code.startsWith('ER_')) {
+    errorCode = ERROR_CODES.DATABASE_ERROR;
+    statusCode = HTTP_STATUS.INTERNAL_SERVER_ERROR;
+    
+    // Duplicate entry
+    if (err.code === 'ER_DUP_ENTRY') {
+      statusCode = HTTP_STATUS.UNPROCESSABLE_ENTITY;
+      errorCode = ERROR_CODES.DUPLICATE_ENTRY;
+      message = 'Duplicate entry. This record already exists.';
+      
+      // Extract field from error message
+      const match = err.message.match(/for key '(\w+)'/i);
+      if (match) {
+        details = [{ field: match[1], message: 'Already exists' }];
+      }
+    } else {
+      // Don't expose database errors in production
+      message = environment.isProduction 
+        ? 'Database error occurred' 
+        : err.message;
+    }
+  }
+  
+  // JWT errors
+  if (err.name === 'JsonWebTokenError') {
+    statusCode = HTTP_STATUS.UNAUTHORIZED;
+    errorCode = ERROR_CODES.UNAUTHORIZED;
+    message = 'Invalid token';
+  }
+  
+  if (err.name === 'TokenExpiredError') {
+    statusCode = HTTP_STATUS.UNAUTHORIZED;
+    errorCode = ERROR_CODES.UNAUTHORIZED;
+    message = 'Token has expired';
+  }
+  
+  // Validation errors from express-validator
+  if (err.array && typeof err.array === 'function') {
     statusCode = HTTP_STATUS.UNPROCESSABLE_ENTITY;
     errorCode = ERROR_CODES.VALIDATION_ERROR;
     message = 'Validation failed';
-    details = err.errors || [];
+    details = err.array().map(error => ({
+      field: error.param || error.path,
+      message: error.msg,
+    }));
   }
 
-  if (err.name === 'JsonWebTokenError') {
-    statusCode = HTTP_STATUS.UNAUTHORIZED;
-    errorCode = ERROR_CODES.INVALID_TOKEN;
-    message = 'Invalid authentication token';
-  }
-
-  if (err.name === 'TokenExpiredError') {
-    statusCode = HTTP_STATUS.UNAUTHORIZED;
-    errorCode = ERROR_CODES.TOKEN_EXPIRED;
-    message = 'Authentication token has expired';
-  }
-
-  // MySQL errors
-  if (err.code === 'ER_DUP_ENTRY') {
-    statusCode = HTTP_STATUS.CONFLICT;
-    errorCode = ERROR_CODES.CONFLICT;
-    message = 'A record with this information already exists';
-  }
-
-  if (err.code === 'ER_NO_REFERENCED_ROW_2') {
-    statusCode = HTTP_STATUS.BAD_REQUEST;
-    errorCode = ERROR_CODES.INVALID_INPUT;
-    message = 'Referenced record does not exist';
-  }
-
-  // Construct error response
+  // Build error response
   const errorResponse = {
     success: false,
     error: {
       code: errorCode,
       message,
       ...(details.length > 0 && { details }),
-      ...(config.isDevelopment && { stack: err.stack }),
+      ...(environment.isDevelopment && { stack: err.stack }),
     },
   };
 
@@ -85,7 +104,7 @@ const errorHandler = (err, req, res, next) => {
  * @param {number} statusCode - HTTP status code
  * @param {string} code - Error code
  * @param {Array} details - Error details
- * @returns {Error} Custom error object
+ * @returns {Error} Custom error
  */
 const createError = (message, statusCode = HTTP_STATUS.INTERNAL_SERVER_ERROR, code = ERROR_CODES.INTERNAL_ERROR, details = []) => {
   const error = new Error(message);
@@ -96,14 +115,18 @@ const createError = (message, statusCode = HTTP_STATUS.INTERNAL_SERVER_ERROR, co
 };
 
 /**
- * Async handler wrapper to catch errors in async route handlers
- * @param {Function} fn - Async function to wrap
+ * Async error wrapper to catch errors in async route handlers
+ * @param {Function} fn - Async route handler
  * @returns {Function} Wrapped function
  */
-const asyncHandler = (fn) => (req, res, next) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
+const asyncHandler = (fn) => {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
 };
 
-module.exports = errorHandler;
-module.exports.createError = createError;
-module.exports.asyncHandler = asyncHandler;
+module.exports = {
+  errorHandler,
+  createError,
+  asyncHandler,
+};
