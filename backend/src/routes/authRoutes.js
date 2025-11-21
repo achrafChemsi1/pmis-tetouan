@@ -1,17 +1,21 @@
 /**
  * Authentication Routes
- * 
- * Defines authentication endpoints with validation
+ * Define auth endpoints with validation
  */
 
 const express = require('express');
-const { body } = require('express-validator');
+const router = express.Router();
 const authController = require('../controllers/authController');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
 const { validate } = require('../middleware/validation');
 const { authLimiter } = require('../middleware/rateLimiter');
-
-const router = express.Router();
+const { 
+  validateLogin, 
+  validateRefresh, 
+  validatePasswordResetRequest,
+  validatePasswordReset,
+  validateChangePassword
+} = require('../utils/validators');
 
 /**
  * @swagger
@@ -40,22 +44,10 @@ const router = express.Router();
  *         description: Login successful
  *       401:
  *         description: Invalid credentials
+ *       429:
+ *         description: Too many attempts
  */
-router.post(
-  '/login',
-  authLimiter,
-  [
-    body('email')
-      .isEmail()
-      .withMessage('Valid email is required')
-      .normalizeEmail(),
-    body('password')
-      .notEmpty()
-      .withMessage('Password is required'),
-  ],
-  validate,
-  authController.login
-);
+router.post('/login', authLimiter, validateLogin, validate, authController.login);
 
 /**
  * @swagger
@@ -65,23 +57,11 @@ router.post(
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               refreshToken:
- *                 type: string
  *     responses:
  *       200:
  *         description: Logout successful
  */
-router.post(
-  '/logout',
-  authenticateToken,
-  authController.logout
-);
+router.post('/logout', authenticate, authController.logout);
 
 /**
  * @swagger
@@ -106,17 +86,7 @@ router.post(
  *       401:
  *         description: Invalid refresh token
  */
-router.post(
-  '/refresh',
-  authLimiter,
-  [
-    body('refreshToken')
-      .notEmpty()
-      .withMessage('Refresh token is required'),
-  ],
-  validate,
-  authController.refresh
-);
+router.post('/refresh', authLimiter, validateRefresh, validate, authController.refresh);
 
 /**
  * @swagger
@@ -138,20 +108,9 @@ router.post(
  *                 format: email
  *     responses:
  *       200:
- *         description: Reset email sent if user exists
+ *         description: Reset email sent if email exists
  */
-router.post(
-  '/password-reset-request',
-  authLimiter,
-  [
-    body('email')
-      .isEmail()
-      .withMessage('Valid email is required')
-      .normalizeEmail(),
-  ],
-  validate,
-  authController.passwordResetRequest
-);
+router.post('/password-reset-request', authLimiter, validatePasswordResetRequest, validate, authController.passwordResetRequest);
 
 /**
  * @swagger
@@ -180,28 +139,13 @@ router.post(
  *       400:
  *         description: Invalid or expired token
  */
-router.post(
-  '/password-reset',
-  authLimiter,
-  [
-    body('token')
-      .notEmpty()
-      .withMessage('Reset token is required'),
-    body('newPassword')
-      .isLength({ min: 8 })
-      .withMessage('Password must be at least 8 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-      .withMessage('Password must contain uppercase, lowercase, number, and special character'),
-  ],
-  validate,
-  authController.passwordReset
-);
+router.post('/password-reset', authLimiter, validatePasswordReset, validate, authController.passwordReset);
 
 /**
  * @swagger
  * /auth/change-password:
  *   post:
- *     summary: Change password for authenticated user
+ *     summary: Change password
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
@@ -224,26 +168,9 @@ router.post(
  *     responses:
  *       200:
  *         description: Password changed successfully
- *       400:
- *         description: Invalid current password
+ *       401:
+ *         description: Current password incorrect
  */
-router.post(
-  '/change-password',
-  authenticateToken,
-  [
-    body('currentPassword')
-      .notEmpty()
-      .withMessage('Current password is required'),
-    body('newPassword')
-      .isLength({ min: 8 })
-      .withMessage('Password must be at least 8 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-      .withMessage('Password must contain uppercase, lowercase, number, and special character')
-      .custom((value, { req }) => value !== req.body.currentPassword)
-      .withMessage('New password must be different from current password'),
-  ],
-  validate,
-  authController.changePassword
-);
+router.post('/change-password', authenticate, validateChangePassword, validate, authController.changePassword);
 
 module.exports = router;
