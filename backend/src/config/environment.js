@@ -1,102 +1,77 @@
 /**
  * Environment Configuration
- * 
- * Loads and validates environment variables
- * Provides typed configuration object
+ * Load and validate environment variables
  */
 
 require('dotenv').config();
 
-const environment = {
+const config = {
   // Application
-  nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT) || 3000,
-  apiVersion: process.env.API_VERSION || 'v1',
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  PORT: parseInt(process.env.PORT, 10) || 3000,
+  API_VERSION: process.env.API_VERSION || 'v1',
   
   // Database
-  database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD,
-    name: process.env.DB_NAME || 'pmis_tetouan',
-    poolMin: parseInt(process.env.DB_POOL_MIN) || 5,
-    poolMax: parseInt(process.env.DB_POOL_MAX) || 10,
-    connectionTimeout: parseInt(process.env.DB_CONNECTION_TIMEOUT) || 10000,
-  },
+  DB_HOST: process.env.DB_HOST || 'localhost',
+  DB_PORT: parseInt(process.env.DB_PORT, 10) || 3306,
+  DB_USER: process.env.DB_USER || 'root',
+  DB_PASSWORD: process.env.DB_PASSWORD || '',
+  DB_NAME: process.env.DB_NAME || 'pmis_tetouan',
+  DB_POOL_SIZE: parseInt(process.env.DB_POOL_SIZE, 10) || 10,
+  DB_CONNECTION_TIMEOUT: parseInt(process.env.DB_CONNECTION_TIMEOUT, 10) || 10000,
   
   // JWT
-  jwt: {
-    secret: process.env.JWT_SECRET,
-    refreshSecret: process.env.JWT_REFRESH_SECRET,
-    expiry: parseInt(process.env.JWT_EXPIRY) || 3600, // 1 hour
-    refreshExpiry: parseInt(process.env.JWT_REFRESH_EXPIRY) || 2592000, // 30 days
-  },
+  JWT_SECRET: process.env.JWT_SECRET || 'development-secret-change-in-production',
+  JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'development-refresh-secret',
+  JWT_EXPIRY: parseInt(process.env.JWT_EXPIRY, 10) || 3600,
+  JWT_REFRESH_EXPIRY: parseInt(process.env.JWT_REFRESH_EXPIRY, 10) || 2592000,
   
   // Security
-  security: {
-    bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS) || 10,
-    maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
-    lockoutDuration: parseInt(process.env.LOCKOUT_DURATION) || 900000, // 15 min
-  },
+  BCRYPT_SALT_ROUNDS: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 10,
+  MAX_FAILED_LOGIN_ATTEMPTS: parseInt(process.env.MAX_FAILED_LOGIN_ATTEMPTS, 10) || 5,
+  ACCOUNT_LOCK_DURATION: parseInt(process.env.ACCOUNT_LOCK_DURATION, 10) || 900000,
   
   // CORS
-  cors: {
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000'],
-    credentials: process.env.CORS_CREDENTIALS === 'true',
-  },
+  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001',
+  CORS_CREDENTIALS: process.env.CORS_CREDENTIALS === 'true',
   
   // Rate Limiting
-  rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-    authMax: parseInt(process.env.RATE_LIMIT_AUTH_MAX) || 5,
-  },
+  RATE_LIMIT_WINDOW_MS: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60000,
+  RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
+  RATE_LIMIT_AUTH_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_AUTH_MAX_REQUESTS, 10) || 5,
   
   // Logging
-  logging: {
-    level: process.env.LOG_LEVEL || 'info',
-    filePath: process.env.LOG_FILE_PATH || './logs/app.log',
-    errorFilePath: process.env.LOG_ERROR_FILE_PATH || './logs/error.log',
-  },
+  LOG_LEVEL: process.env.LOG_LEVEL || 'info',
+  LOG_DIR: process.env.LOG_DIR || 'logs',
+  LOG_MAX_FILES: process.env.LOG_MAX_FILES || '14d',
   
-  // Swagger
-  swagger: {
-    enabled: process.env.SWAGGER_ENABLED !== 'false',
-    path: process.env.SWAGGER_PATH || '/api/docs',
-  },
+  // Pagination
+  DEFAULT_PAGE_SIZE: parseInt(process.env.DEFAULT_PAGE_SIZE, 10) || 20,
+  MAX_PAGE_SIZE: parseInt(process.env.MAX_PAGE_SIZE, 10) || 100,
   
-  // Production check
-  isProduction: process.env.NODE_ENV === 'production',
-  isDevelopment: process.env.NODE_ENV === 'development',
+  // URLs
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3001',
+  BACKEND_URL: process.env.BACKEND_URL || 'http://localhost:3000'
 };
 
-// Validate required environment variables
-const validateEnvironment = () => {
-  const required = [
+// Validate required environment variables in production
+if (config.NODE_ENV === 'production') {
+  const requiredVars = [
     'DB_PASSWORD',
     'JWT_SECRET',
-    'JWT_REFRESH_SECRET',
+    'JWT_REFRESH_SECRET'
   ];
   
-  const missing = required.filter(key => !process.env[key]);
+  const missingVars = requiredVars.filter(varName => !process.env[varName]);
   
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  if (missingVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
   
-  // Validate JWT secrets length
-  if (process.env.JWT_SECRET.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters long');
+  // Warn about insecure defaults
+  if (config.JWT_SECRET.includes('development') || config.JWT_SECRET.includes('change')) {
+    throw new Error('JWT_SECRET must be changed in production!');
   }
-  
-  if (process.env.JWT_REFRESH_SECRET.length < 32) {
-    throw new Error('JWT_REFRESH_SECRET must be at least 32 characters long');
-  }
-};
-
-if (environment.nodeEnv !== 'test') {
-  validateEnvironment();
 }
 
-module.exports = environment;
+module.exports = config;

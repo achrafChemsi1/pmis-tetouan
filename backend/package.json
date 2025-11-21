@@ -1,7 +1,7 @@
 {
   "name": "pmis-tetouan-backend",
   "version": "1.0.0",
-  "description": "PMIS Tétouan Backend API - Project Management Information System for Prefecture of Tétouan",
+  "description": "PMIS Tétouan - Backend API for Project Management Information System",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -10,15 +10,14 @@
     "test:watch": "jest --watch",
     "seed": "node src/database/seeders.js",
     "lint": "eslint src/**/*.js",
-    "format": "prettier --write \"src/**/*.js\""
+    "lint:fix": "eslint src/**/*.js --fix"
   },
   "keywords": [
     "pmis",
     "project-management",
     "government",
     "tetouan",
-    "morocco",
-    "rest-api"
+    "morocco"
   ],
   "author": "Prefecture of Tétouan - Division d'Équipement",
   "license": "MIT",
@@ -34,17 +33,17 @@
     "compression": "^1.7.4",
     "morgan": "^1.10.0",
     "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "express-rate-limit": "^7.1.5",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
-    "express-rate-limit": "^7.1.5",
     "joi": "^17.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",
     "jest": "^29.7.0",
     "supertest": "^6.3.3",
-    "eslint": "^8.56.0",
-    "prettier": "^3.1.1"
+    "eslint": "^8.55.0"
   },
   "engines": {
     "node": ">=18.0.0",

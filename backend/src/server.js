@@ -1,8 +1,7 @@
 /**
- * PMIS Tétouan Backend Server
- * 
- * Main entry point for the Express.js application
- * Configures middleware, routes, and starts the server
+ * PMIS Tétouan - Main Server Entry Point
+ * Prefecture of Tétouan - Division d'Équipement
+ * Ministry of Interior, Morocco
  */
 
 const express = require('express');
@@ -10,17 +9,18 @@ const helmet = require('helmet');
 const cors = require('cors');
 const compression = require('compression');
 const morgan = require('morgan');
+const path = require('path');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 
 // Load environment variables
-const environment = require('./config/environment');
-const logger = require('./config/logger');
-const { createPool, closePool } = require('./config/database');
+require('dotenv').config();
 
-// Import middleware
+// Import configuration
+const { PORT, NODE_ENV, API_VERSION, CORS_ORIGIN } = require('./config/environment');
+const db = require('./config/database');
+const logger = require('./middleware/logger');
 const errorHandler = require('./middleware/errorHandler');
-const notFoundHandler = require('./middleware/notFoundHandler');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -30,7 +30,7 @@ const budgetRoutes = require('./routes/budgetRoutes');
 const userRoutes = require('./routes/userRoutes');
 const approvalRoutes = require('./routes/approvalRoutes');
 
-// Create Express app
+// Initialize Express app
 const app = express();
 
 // ============================================================================
@@ -43,114 +43,130 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
     },
   },
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
-    preload: true,
-  },
+    preload: true
+  }
 }));
 
 // CORS configuration
 app.use(cors({
-  origin: environment.cors.origin,
-  credentials: environment.cors.credentials,
+  origin: CORS_ORIGIN,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+  exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset']
 }));
 
-// Body parsing
+// Compression middleware
+app.use(compression());
+
+// Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Compression
-app.use(compression());
-
 // HTTP request logging
-if (environment.isDevelopment) {
+if (NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
   app.use(morgan('combined', {
     stream: {
-      write: (message) => logger.info(message.trim()),
-    },
+      write: (message) => logger.info(message.trim())
+    }
   }));
 }
 
 // ============================================================================
-// SWAGGER DOCUMENTATION
+// SWAGGER API DOCUMENTATION
 // ============================================================================
 
-if (environment.swagger.enabled) {
-  const swaggerOptions = {
-    definition: {
-      openapi: '3.0.0',
-      info: {
-        title: 'PMIS Tétouan API',
-        version: '1.0.0',
-        description: 'Project Management Information System API for Prefecture of Tétouan',
-        contact: {
-          name: 'Division d\'Équipement',
-          email: 'contact@prefecture-tetouan.ma',
-        },
-      },
-      servers: [
-        {
-          url: `http://localhost:${environment.port}/api/${environment.apiVersion}`,
-          description: 'Development server',
-        },
-        {
-          url: `https://api.pmis.tetouan.gov.ma/api/${environment.apiVersion}`,
-          description: 'Production server',
-        },
-      ],
-      components: {
-        securitySchemes: {
-          bearerAuth: {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'JWT',
-          },
-        },
-      },
-      security: [{
-        bearerAuth: [],
-      }],
-    },
-    apis: ['./src/routes/*.js'],
-  };
-
-  const swaggerSpec = swaggerJsdoc(swaggerOptions);
-  app.use(environment.swagger.path, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  logger.info(`📚 Swagger documentation available at ${environment.swagger.path}`);
-}
-
-// ============================================================================
-// HEALTH CHECK
-// ============================================================================
-
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    data: {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: environment.nodeEnv,
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'PMIS Tétouan API',
       version: '1.0.0',
+      description: 'Project Management Information System API for Prefecture of Tétouan',
+      contact: {
+        name: 'Division d\'Équipement',
+        email: 'contact@prefecture-tetouan.ma'
+      }
     },
-  });
+    servers: [
+      {
+        url: `http://localhost:${PORT}/api/${API_VERSION}`,
+        description: 'Development server'
+      },
+      {
+        url: `https://api.pmis.tetouan.gov.ma/api/${API_VERSION}`,
+        description: 'Production server'
+      }
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    },
+    security: [{
+      bearerAuth: []
+    }]
+  },
+  apis: ['./src/routes/*.js']
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use(`/api/${API_VERSION}/docs`, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// ============================================================================
+// HEALTH CHECK ENDPOINT
+// ============================================================================
+
+app.get('/health', async (req, res) => {
+  try {
+    // Check database connection
+    const [rows] = await db.query('SELECT 1 as health');
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: NODE_ENV,
+        database: rows[0].health === 1 ? 'connected' : 'disconnected',
+        version: '1.0.0'
+      }
+    });
+  } catch (error) {
+    logger.error('Health check failed:', error);
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Service is temporarily unavailable'
+      }
+    });
+  }
 });
 
-app.get('/api/version', (req, res) => {
-  res.status(200).json({
+// API version info endpoint
+app.get(`/api/${API_VERSION}/version`, (req, res) => {
+  res.json({
     success: true,
     data: {
       version: '1.0.0',
-      apiVersion: environment.apiVersion,
-    },
+      apiVersion: API_VERSION,
+      environment: NODE_ENV
+    }
   });
 });
 
@@ -158,7 +174,7 @@ app.get('/api/version', (req, res) => {
 // API ROUTES
 // ============================================================================
 
-const API_PREFIX = `/api/${environment.apiVersion}`;
+const API_PREFIX = `/api/${API_VERSION}`;
 
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/projects`, projectRoutes);
@@ -167,16 +183,33 @@ app.use(`${API_PREFIX}/budgets`, budgetRoutes);
 app.use(`${API_PREFIX}/users`, userRoutes);
 app.use(`${API_PREFIX}/approvals`, approvalRoutes);
 
-logger.info(`🚀 API routes registered at ${API_PREFIX}`);
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      message: 'PMIS Tétouan API',
+      version: '1.0.0',
+      documentation: `${req.protocol}://${req.get('host')}${API_PREFIX}/docs`
+    }
+  });
+});
+
+// 404 handler for undefined routes
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: {
+      code: 'NOT_FOUND',
+      message: `Route ${req.method} ${req.url} not found`
+    }
+  });
+});
 
 // ============================================================================
-// ERROR HANDLING
+// GLOBAL ERROR HANDLER
 // ============================================================================
 
-// 404 handler
-app.use(notFoundHandler);
-
-// Global error handler (must be last)
 app.use(errorHandler);
 
 // ============================================================================
@@ -187,20 +220,21 @@ let server;
 
 const startServer = async () => {
   try {
-    // Initialize database connection
-    await createPool();
+    // Test database connection
+    logger.info('Testing database connection...');
+    await db.query('SELECT 1');
+    logger.info('Database connection successful');
     
-    // Start Express server
-    server = app.listen(environment.port, () => {
-      logger.info('═══════════════════════════════════════════════════════');
-      logger.info('🏛️  PMIS TÉTOUAN - Backend Server');
-      logger.info('   Prefecture of Tétouan - Division d\'Équipement');
-      logger.info('═══════════════════════════════════════════════════════');
-      logger.info(`🌍 Environment: ${environment.nodeEnv}`);
-      logger.info(`🚀 Server running on port ${environment.port}`);
-      logger.info(`📡 API Base URL: http://localhost:${environment.port}${API_PREFIX}`);
-      logger.info(`📚 Swagger Docs: http://localhost:${environment.port}${environment.swagger.path}`);
-      logger.info('═══════════════════════════════════════════════════════');
+    // Start HTTP server
+    server = app.listen(PORT, () => {
+      logger.info(`============================================`);
+      logger.info(`PMIS Tétouan Backend Server`);
+      logger.info(`Environment: ${NODE_ENV}`);
+      logger.info(`Server running on port ${PORT}`);
+      logger.info(`API Base URL: http://localhost:${PORT}${API_PREFIX}`);
+      logger.info(`API Documentation: http://localhost:${PORT}${API_PREFIX}/docs`);
+      logger.info(`Health Check: http://localhost:${PORT}/health`);
+      logger.info(`============================================`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
@@ -217,35 +251,33 @@ const gracefulShutdown = async (signal) => {
   
   if (server) {
     server.close(async () => {
-      logger.info('✅ HTTP server closed');
+      logger.info('HTTP server closed');
       
       try {
-        await closePool();
-        logger.info('✅ Database connections closed');
-        logger.info('👋 Server shutdown complete');
+        // Close database connections
+        await db.end();
+        logger.info('Database connections closed');
+        logger.info('Graceful shutdown completed');
         process.exit(0);
       } catch (error) {
         logger.error('Error during shutdown:', error);
         process.exit(1);
       }
     });
+    
+    // Force shutdown after 30 seconds
+    setTimeout(() => {
+      logger.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 30000);
+  } else {
+    process.exit(0);
   }
-  
-  // Force shutdown after 10 seconds
-  setTimeout(() => {
-    logger.error('⚠️  Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
 };
 
 // Handle shutdown signals
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Promise Rejection:', { reason, promise });
-});
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
@@ -253,9 +285,13 @@ process.on('uncaughtException', (error) => {
   gracefulShutdown('UNCAUGHT_EXCEPTION');
 });
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION');
+});
+
 // Start the server
-if (require.main === module) {
-  startServer();
-}
+startServer();
 
 module.exports = app;
